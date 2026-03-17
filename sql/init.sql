@@ -109,6 +109,36 @@ INSERT INTO `intel_signals` VALUES ('002dfce4-6f1a-4edb-a82a-3dcbd639cf49','2026
 UNLOCK TABLES;
 
 --
+-- Add distance_from_last column and populate it
+--
+
+ALTER TABLE `intel_signals` ADD COLUMN `distance_from_last` double NOT NULL DEFAULT 0;
+
+UPDATE `intel_signals` s
+JOIN (
+    SELECT
+        signal_id,
+        CASE
+            WHEN prev_lat IS NULL THEN 0
+            ELSE 6371 * 2 * ASIN(SQRT(
+                POW(SIN(RADIANS(reported_lat - prev_lat) / 2), 2) +
+                COS(RADIANS(prev_lat)) * COS(RADIANS(reported_lat)) *
+                POW(SIN(RADIANS(reported_lon - prev_lon) / 2), 2)
+            ))
+        END AS dist_km
+    FROM (
+        SELECT
+            signal_id,
+            reported_lat,
+            reported_lon,
+            LAG(reported_lat) OVER (PARTITION BY entity_id ORDER BY `timestamp`) AS prev_lat,
+            LAG(reported_lon) OVER (PARTITION BY entity_id ORDER BY `timestamp`) AS prev_lon
+        FROM `intel_signals`
+    ) sub
+) calc ON s.signal_id = calc.signal_id
+SET s.distance_from_last = calc.dist_km;
+
+--
 -- Table structure for table `targets`
 --
 
